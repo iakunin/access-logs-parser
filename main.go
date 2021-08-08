@@ -5,7 +5,9 @@ import (
 	"github.com/satyrius/gonx"
 	"io"
 	"log"
+	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -40,15 +42,21 @@ func writeEntryToCsv(entry *gonx.Entry, writer *csv.Writer) {
 	host, _ := entry.Field("host")
 	request, _ := entry.Field("request")
 
-	// $request expected to contain 2 spaces, otherwise just skip this log entry
 	if strings.Count(request, " ") < 2 {
+		log.Default().Printf("$request expected to contain 2 spaces, got: '%s'", request)
 		return
 	}
 
 	firstSpace := strings.Index(request, " ")
 	lastSpace := strings.LastIndex(request, " ")
-
 	requestUrl := request[firstSpace+1 : lastSpace]
+	uri, uriErr := url.ParseRequestURI(requestUrl)
+
+	if uriErr != nil {
+		log.Default().Printf("Unable to parse uri='%s' with err='%s'", requestUrl, uriErr)
+		return
+	}
+
 	httpVerb := request[:firstSpace]
 
 	parsedDateTime, _ := time.Parse("02/Jan/2006:15:04:05 -0700", timeLocal)
@@ -57,13 +65,20 @@ func writeEntryToCsv(entry *gonx.Entry, writer *csv.Writer) {
 		parsedDateTime.UTC().Format("2006-01-02"),
 		parsedDateTime.UTC().Format("2006-01-02 15:04:05"),
 		remoteAddr,
-		requestUrl,
+		uri.Path,
+		buildRoute(uri),
 		httpVerb,
 		status,
 		bodyBytesSent,
 		host,
 	})
 	checkError("Cannot write to file", err)
+}
+
+func buildRoute(uri *url.URL) string {
+	return regexp.
+		MustCompile(`/\d+(/|$)`).
+		ReplaceAllString(uri.Path, `/{id}$1`)
 }
 
 func checkError(message string, err error) {
